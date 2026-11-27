@@ -1,10 +1,11 @@
-import re
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
-RAW = "Telco_customer_churn.xlsx"
-OUT_DATA = "telco_clean.csv"
-OUT_REPORT = "cleaning_report.txt"
+ROOT = Path(__file__).resolve().parents[1]
+RAW = ROOT / "data" / "Telco_customer_churn.xlsx"
+OUT_DATA = ROOT / "results" / "data" / "telco_clean.csv"
+OUT_REPORT = OUT_DATA.with_name("cleaning_report.txt")
 
 lines = []
 
@@ -142,6 +143,7 @@ log("[FEATURE] ServiceCount = sum of the 8 add-on flags "
     f"(range {df['ServiceCount'].min()}-{df['ServiceCount'].max()})")
 
 # ------------------------------------------------------------------ 8. save
+OUT_DATA.parent.mkdir(parents=True, exist_ok=True)
 df.to_csv(OUT_DATA, index=False)
 log("")
 log(f"[SAVE] {OUT_DATA}  shape = {df.shape}")
@@ -153,8 +155,8 @@ print(f"\nreport -> {OUT_REPORT}")
 
 
 # =====================================================================
-# Shared feature builder -- all three model owners should call this
-# so that LR / RF / XGBoost see exactly the same columns.
+# Feature builder for inspecting the cleaned data. Each model defines its
+# own feature set in its experiment code.
 # =====================================================================
 def build_features(df, drop_total_charges=False):
     """One-hot encode the three multi-level variables.

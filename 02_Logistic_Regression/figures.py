@@ -52,7 +52,7 @@ def make_figures(metrics, curve, directory):
         t = metrics.loc[eid, "threshold"]
         # At an arbitrary cutoff, use the next observed score >= cutoff.
         i = np.searchsorted(curve.threshold, t)
-        value = curve.f1.iloc[i]
+        value = curve.f1.iloc[i] if i < len(curve) else 0.0
         color = COLORS[int(eid[1]) - 1]
         ax.vlines(t, 0, value, color=color, ls="--", lw=0.9)
         ax.plot(t, value, "o", color=color, ms=4.5)
@@ -71,7 +71,7 @@ def make_figures(metrics, curve, directory):
     right.set_yticks(y, ["True positives","False positives"])
     right.set_xlabel("Test customers flagged")
     right.set_ylim(-0.56, 1.55)
-    right.set_xlim(0, metrics.loc[["E2","E4"],["TP","FP"]].max().max()*1.22)
+    right.set_xlim(0, max(1, metrics.loc[["E2","E4"],["TP","FP"]].max().max()*1.22))
     right.set_title("b   Alerts on the test set", loc="left", fontweight="bold", fontsize=10)
     right.legend(loc="lower right", frameon=False, ncols=2, fontsize=8, handlelength=1)
     right.grid(axis="x", color=GRID, lw=0.7)

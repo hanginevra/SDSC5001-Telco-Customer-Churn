@@ -1,4 +1,5 @@
-"""Run python experiments.py from any directory to reproduce tables and figures."""
+"""Run this script to reproduce the logistic regression tables and figures."""
+import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -14,7 +15,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from figures import make_figures
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = ROOT / "results" / "logistic_regression"
 C_GRID = [0.01, 0.1, 1.0, 10.0]
 CONTINUOUS = ["Tenure Months", "Monthly Charges", "Total Charges"]
 CATEGORICAL = ["Internet Service", "Contract", "Payment Method"]
@@ -76,9 +78,9 @@ def bootstrap(y, scores, classes):
 
 
 def main():
-    tables = ROOT / "tables"
-    tables.mkdir(exist_ok=True)
-    df = pd.read_csv(ROOT / "data/telco_clean.csv")
+    tables = OUTPUT / "tables"
+    tables.mkdir(parents=True, exist_ok=True)
+    df = pd.read_csv(os.environ.get("TELCO_CLEAN_DATA", ROOT / "data/telco_clean.csv"))
     split = pd.read_csv(ROOT / "data/split.csv").set_index("row_id")
     assert split.index.equals(df.index) and set(split.subset) == {"train", "test"}
     train = split.index[split.subset == "train"]
@@ -99,7 +101,12 @@ def main():
     curve.to_csv(tables / "threshold_curve.csv", index=False)
     pd.DataFrame({"row_id": train, "cv_fold": fold_id, "Churn": ytr.to_numpy(),
                   "score": oof}).to_csv(tables / "train_oof.csv", index=False)
-    reduced = logistic(CONTINUOUS[:2]).set_params(lr__C=default_c).fit(Xtr, ytr)
+    reduced_tuned, reduced_grid = tune(logistic(CONTINUOUS[:2]), Xtr, ytr, folds, "Reduced retuned")
+    reduced_grid.to_csv(tables / "reduced_cv_grid.csv", index=False)
+    reduced_oof = cross_val_predict(reduced_tuned, Xtr, ytr, cv=folds, method="predict_proba")[:, 1]
+    reduced = reduced_tuned
+    if reduced_tuned["lr"].C != default_c:
+        reduced = logistic(CONTINUOUS[:2]).set_params(lr__C=default_c).fit(Xtr, ytr)
     majority = DummyClassifier(strategy="most_frequent").fit(Xtr, ytr)
     models = [majority, default, balanced, default, reduced]
     cutoffs = np.array([0.5, 0.5, 0.5, threshold, 0.5])
@@ -117,6 +124,7 @@ def main():
         p, predicted = scores[:, j], classes[:, j]
         tn, fp, fn, tp = confusion_matrix(yt, predicted, labels=[0, 1]).ravel()
         rows.append(dict(experiment=name, C=np.nan if j == 0 else models[j]["lr"].C,
+                         n_features=0 if j == 0 else len(models[j]["prep"].get_feature_names_out()),
                          threshold=cutoffs[j], auc=roc_auc_score(yt, p), f1=f1_score(yt, predicted),
                          auc_low=intervals[0,j,0], auc_high=intervals[1,j,0],
                          f1_low=intervals[0,j,1], f1_high=intervals[1,j,1],
@@ -128,6 +136,22 @@ def main():
     metrics = pd.DataFrame(rows).set_index("experiment")
     metrics.to_csv(tables / "test_metrics.csv")
     cases.to_csv(tables / "test_predictions.csv", index=False)
+    study_design = split.reset_index().assign(Churn=y.to_numpy())
+    study_scores = []
+    study_features = []
+    for setting, model, train_score, test_score in (
+        ("full", default, oof, scores[:, 1]),
+        ("reduced", reduced_tuned, reduced_oof, reduced_tuned.predict_proba(X.loc[test])[:, 1]),
+    ):
+        design = study_design.assign(feature_set=setting, score=np.nan)
+        design.loc[train, "score"] = train_score
+        design.loc[test, "score"] = test_score
+        study_scores.append(design)
+        study_features.append(pd.DataFrame({
+            "feature_set": setting, "feature": model["prep"].get_feature_names_out(),
+        }))
+    pd.concat(study_scores, ignore_index=True).to_csv(OUTPUT / "study_scores.csv", index=False)
+    pd.concat(study_features, ignore_index=True).to_csv(OUTPUT / "study_features.csv", index=False)
     contrasts = []
     for j in (2, 3, 4):
         low, high = np.quantile(simulated[:, j] - simulated[:, 1], [0.025, 0.975], axis=0)
@@ -139,7 +163,7 @@ def main():
     beta = default["lr"].coef_[0]
     pd.DataFrame({"feature": default["prep"].get_feature_names_out(), "beta": beta,
                   "odds_ratio": np.exp(beta)}).to_csv(tables / "default_coefficients.csv", index=False)
-    make_figures(metrics, curve, ROOT / "figures")
+    make_figures(metrics, curve, OUTPUT / "figures")
     print(metrics.round(4).to_string())
     print(pd.DataFrame(contrasts).round(5).to_string(index=False))
 

@@ -101,7 +101,12 @@ def main():
     curve.to_csv(tables / "threshold_curve.csv", index=False)
     pd.DataFrame({"row_id": train, "cv_fold": fold_id, "Churn": ytr.to_numpy(),
                   "score": oof}).to_csv(tables / "train_oof.csv", index=False)
-    reduced = logistic(CONTINUOUS[:2]).set_params(lr__C=default_c).fit(Xtr, ytr)
+    reduced_tuned, reduced_grid = tune(logistic(CONTINUOUS[:2]), Xtr, ytr, folds, "Reduced retuned")
+    reduced_grid.to_csv(tables / "reduced_cv_grid.csv", index=False)
+    reduced_oof = cross_val_predict(reduced_tuned, Xtr, ytr, cv=folds, method="predict_proba")[:, 1]
+    reduced = reduced_tuned
+    if reduced_tuned["lr"].C != default_c:
+        reduced = logistic(CONTINUOUS[:2]).set_params(lr__C=default_c).fit(Xtr, ytr)
     majority = DummyClassifier(strategy="most_frequent").fit(Xtr, ytr)
     models = [majority, default, balanced, default, reduced]
     cutoffs = np.array([0.5, 0.5, 0.5, threshold, 0.5])
@@ -131,6 +136,22 @@ def main():
     metrics = pd.DataFrame(rows).set_index("experiment")
     metrics.to_csv(tables / "test_metrics.csv")
     cases.to_csv(tables / "test_predictions.csv", index=False)
+    study_design = split.reset_index().assign(Churn=y.to_numpy())
+    study_scores = []
+    study_features = []
+    for setting, model, train_score, test_score in (
+        ("full", default, oof, scores[:, 1]),
+        ("reduced", reduced_tuned, reduced_oof, reduced_tuned.predict_proba(X.loc[test])[:, 1]),
+    ):
+        design = study_design.assign(feature_set=setting, score=np.nan)
+        design.loc[train, "score"] = train_score
+        design.loc[test, "score"] = test_score
+        study_scores.append(design)
+        study_features.append(pd.DataFrame({
+            "feature_set": setting, "feature": model["prep"].get_feature_names_out(),
+        }))
+    pd.concat(study_scores, ignore_index=True).to_csv(OUTPUT / "study_scores.csv", index=False)
+    pd.concat(study_features, ignore_index=True).to_csv(OUTPUT / "study_features.csv", index=False)
     contrasts = []
     for j in (2, 3, 4):
         low, high = np.quantile(simulated[:, j] - simulated[:, 1], [0.025, 0.975], axis=0)

@@ -55,6 +55,8 @@ def main():
     churn = read_csv(os.environ.get("TELCO_CLEAN_DATA", ROOT / "data" / "telco_clean.csv"))["Churn"]
     shared_split = read_csv(ROOT / "data" / "split.csv")
     rf_split = read_csv(OUTPUT / "random_forest" / "rf_split.csv")
+    if not rf_split.equals(shared_split):
+        raise ValueError("Random Forest must use the shared test set and training folds.")
     metrics = []
     exports = []
 
@@ -82,7 +84,7 @@ def main():
             columns={"csv_row_0based": "row_id", "churn": "Churn"},
         )
         rows, frames = collect(predictions, rf_cases, rf_split, churn,
-                               "Random Forest", "rf_stratified_seed_42")
+                               "Random Forest", "shared_split")
         metrics.extend(rows)
         exports.extend(frames)
 

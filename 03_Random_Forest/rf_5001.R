@@ -20,7 +20,7 @@ stopifnot(!anyNA(y), setequal(unique(y), c(0, 1)), min(table(y)) >= 13)
 excluded <- c(
   "Churn", "Churn Label", "Churn Value", "Churn Score", "Churn Reason",
   "CLTV", "CustomerID", "Count", "Country", "State", "City",
-  "Zip Code", "Lat Long", "Latitude", "Longitude"
+  "Zip Code", "Lat Long", "Latitude", "Longitude", "ServiceCount"
 )
 x <- df[setdiff(names(df), c(excluded, categorical))]
 feature_groups <- setNames(as.list(names(x)), names(x))
@@ -40,24 +40,26 @@ for (column in categorical) {
 stopifnot(!anyNA(x), all(vapply(x, is.numeric, logical(1))))
 cat("编码后特征数：", ncol(x), "\n")
 
-# 2. 在 R 中生成分层测试集和训练集的 10 折
-set.seed(seed)
-test_rows <- sort(unlist(lapply(split(seq_along(y), y), function(rows) {
-  sample(rows, size = round(0.20 * length(rows)))
-}), use.names = FALSE))
-train_rows <- setdiff(seq_along(y), test_rows)
-
-fold_id <- integer(length(y))
-for (rows in split(train_rows, y[train_rows])) {
-  fold_id[rows] <- sample(rep(seq_len(10L), length.out = length(rows)))
-}
-
+# 2. 使用小组统一的训练集、测试集和10折交叉验证
+split_data <- read.csv(file.path(root, "data", "split.csv"))
+stopifnot(
+  nrow(split_data) == nrow(df),
+  all(split_data$row_id == seq_len(nrow(df)) - 1L),
+  setequal(split_data$subset, c("train", "test")),
+  ncol(x) == 23L
+)
+train_rows <- split_data$row_id[split_data$subset == "train"] + 1L
+test_rows <- split_data$row_id[split_data$subset == "test"] + 1L
+fold_id <- split_data$cv_fold
+stopifnot(
+  length(train_rows) == 5634L,
+  length(test_rows) == 1409L,
+  setequal(fold_id[train_rows], 1:10),
+  all(fold_id[test_rows] == -1L)
+)
 cat("训练集：", length(train_rows), " 测试集：", length(test_rows), "\n")
-write.csv(data.frame(
-  row_id = seq_along(y) - 1L,
-  subset = ifelse(fold_id == 0L, "test", "train"),
-  cv_fold = ifelse(fold_id == 0L, -1L, fold_id)
-), file.path(output, "rf_split.csv"), row.names = FALSE)
+
+write.csv(split_data, file.path(output, "rf_split.csv"), row.names = FALSE)
 
 auc_score <- function(actual, probability) {
   positive <- actual == 1L
@@ -117,7 +119,7 @@ bootstrap_ci <- function(actual, probability, predicted) {
 }
 
 # 3. 交叉验证调参，再评估普通版和类别加权版
-run_forest <- function(features, groups, folder) {
+run_forest <- function(features, groups, folder, feature_set, study_weighting = NULL) {
   dir.create(folder, recursive = TRUE, showWarnings = FALSE)
   p <- ncol(features)
   
@@ -131,6 +133,9 @@ run_forest <- function(features, groups, folder) {
   grid$cv_auc <- NA_real_
   grid$cv_f1 <- NA_real_
   
+  grid$candidate <- seq_len(nrow(grid))
+  oof <- matrix(NA_real_, nrow = nrow(df), ncol = nrow(grid))
+
   for (i in seq_len(nrow(grid))) {
     cat(basename(folder), "调参进度", i, "/", nrow(grid), "\n")
     
@@ -139,10 +144,11 @@ run_forest <- function(features, groups, folder) {
       fitting <- train_rows[fold_id[train_rows] != fold]
       model <- fit_forest(features, fitting, grid[i, ])
       probability <- predict_churn(model, features[validation, , drop = FALSE])
+      oof[validation, i] <<- probability
       
       c(
         auc_score(y[validation], probability),
-        f1_score(y[validation], as.integer(probability > 0.5))
+        f1_score(y[validation], as.integer(probability >= 0.5))
       )
     }, numeric(2))
     grid$cv_auc[i] <- mean(scores[1, ])
@@ -152,6 +158,10 @@ run_forest <- function(features, groups, folder) {
   # 用训练集 CV 的平均 AUC 选主模型，AUC 相同时看 F1
   grid <- grid[order(-grid$cv_auc, -grid$cv_f1), ]
   best <- grid[!duplicated(grid$weighting), ]
+  if (is.null(study_weighting)) {
+    study_weighting <- best$weighting[1L]
+  }
+  study_config <- best[best$weighting == study_weighting, , drop = FALSE]
   write.csv(grid, file.path(folder, "rf_cv_results.csv"), row.names = FALSE)
   
   x_test <- features[test_rows, , drop = FALSE]
@@ -163,7 +173,7 @@ run_forest <- function(features, groups, folder) {
     config <- best[i, ]
     model <- fit_forest(features, train_rows, config)
     probability <- predict_churn(model, x_test)
-    predicted <- as.integer(probability > 0.5)
+    predicted <- as.integer(probability >= 0.5)
     auc <- auc_score(y_test, probability)
     ci <- bootstrap_ci(y_test, probability, predicted)
     cm <- table(
@@ -226,17 +236,27 @@ run_forest <- function(features, groups, folder) {
   results <- do.call(rbind, results)
   write.csv(results, file.path(folder, "rf_test_metrics.csv"), row.names = FALSE)
   write.csv(predictions, file.path(folder, "rf_test_predictions.csv"), row.names = FALSE)
-  results
+  score <- oof[, study_config$candidate]
+  score[test_rows] <- predictions[[paste0(study_weighting, "_probability")]]
+  stopifnot(!anyNA(score))
+  list(metrics = results, study_weighting = study_weighting,
+       scores = data.frame(feature_set = feature_set, split_data, Churn = y, score = score),
+       features = data.frame(feature_set = feature_set, feature = names(features)))
 }
 
 # 4. 主分析与稳健性检验
-main_results <- run_forest(x, feature_groups, file.path(output, "main"))
-
-robustness_results <- run_forest(
+main_run <- run_forest(x, feature_groups, file.path(output, "main"), "full")
+reduced_run <- run_forest(
   x[setdiff(names(x), "Total Charges")],
   feature_groups[setdiff(names(feature_groups), "Total Charges")],
-  file.path(output, "without_total_charges")
+  file.path(output, "without_total_charges"), "reduced", main_run$study_weighting
 )
+write.csv(rbind(main_run$scores, reduced_run$scores), file.path(output, "study_scores.csv"),
+          row.names = FALSE)
+write.csv(rbind(main_run$features, reduced_run$features), file.path(output, "study_features.csv"),
+          row.names = FALSE)
+write.csv(data.frame(weighting = main_run$study_weighting), file.path(output, "study_weighting.csv"),
+          row.names = FALSE)
 
 report_columns <- c(
   "weighting", "selected_by_cv", "cv_auc", "cv_f1",
@@ -244,7 +264,7 @@ report_columns <- c(
 )
 
 cat("\n主分析\n")
-print(main_results[report_columns], row.names = FALSE)
+print(main_run$metrics[report_columns], row.names = FALSE)
 
 cat("\n稳健性检验：去掉 Total Charges\n")
-print(robustness_results[report_columns], row.names = FALSE)
+print(reduced_run$metrics[report_columns], row.names = FALSE)

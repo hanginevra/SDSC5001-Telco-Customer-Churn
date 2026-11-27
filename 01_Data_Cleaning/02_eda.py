@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -7,10 +8,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 sns.set_theme(style="whitegrid", palette="muted")
-FIG = "figures"
-os.makedirs(FIG, exist_ok=True)
+ROOT = Path(__file__).resolve().parents[1]
+FIG = ROOT / "results" / "eda" / "figures"
+FIG.mkdir(parents=True, exist_ok=True)
 
-df = pd.read_csv("telco_clean.csv")
+df = pd.read_csv(os.environ.get("TELCO_CLEAN_DATA", ROOT / "data" / "telco_clean.csv"))
 lines = []
 
 
@@ -21,9 +23,9 @@ def log(msg=""):
 
 def save(fig, name):
     fig.tight_layout()
-    fig.savefig(f"{FIG}/{name}", dpi=150, bbox_inches="tight")
+    fig.savefig(FIG / name, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    log(f"  -> figures/{name}")
+    log(f"  -> {FIG / name}")
 
 
 CHURN_RATE = df["Churn"].mean()
@@ -53,7 +55,7 @@ fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
 for ax, c in zip(axes, ["Tenure Months", "Monthly Charges", "Total Charges"]):
     sns.boxplot(data=df, x="Churn", y=c, ax=ax,
                 hue="Churn", palette={0: "#55A868", 1: "#C44E52"}, legend=False)
-    ax.set_xticklabels(["No churn", "Churn"])
+    ax.set_xticks([0, 1], ["No churn", "Churn"])
     ax.set_title(f"{c} by churn")
     ax.set_xlabel("")
 save(fig, "02_numeric_vs_churn.png")
@@ -145,7 +147,7 @@ top_pay_rate = df.groupby("Payment Method")["Churn"].mean().max()
 
 log(f"1. Imbalance: {CHURN_RATE:.1%} churn -> use AUC-ROC / F1, not accuracy; "
     f"stratified split required.")
-log(f"2. Contract is the strongest categorical driver: "
+log(f"2. Observed churn rates by contract: "
     f"{top_contract} churn {top_contract_rate:.1%} vs "
     f"{df.groupby('Contract')['Churn'].mean().min():.1%} for the lowest group.")
 log(f"3. Internet Service: {top_internet} churn {top_internet_rate:.1%}; "
@@ -168,7 +170,8 @@ log("7. Multicollinearity: Total Charges ~ Monthly Charges x Tenure "
 log("8. Leakage removed before EDA: Churn Score, Churn Reason, CLTV, "
     "Churn Label. Churn Reason is post-hoc only and must never enter a model.")
 
-with open("eda_summary.txt", "w", encoding="utf-8") as f:
+summary = FIG.parent / "eda_summary.txt"
+with summary.open("w", encoding="utf-8") as f:
     f.write("\n".join(lines))
-print("\nsummary -> eda_summary.txt")
+print(f"\nsummary -> {summary}")
 

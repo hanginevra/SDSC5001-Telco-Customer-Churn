@@ -1,7 +1,12 @@
 
 library(ranger)
 
-data_path <- file.choose()
+script_arg <- grep("^--file=", commandArgs(), value = TRUE)
+script_path <- normalizePath(sub("^--file=", "", script_arg), mustWork = TRUE)
+root <- dirname(dirname(script_path))
+data_path <- Sys.getenv("TELCO_CLEAN_DATA", file.path(root, "data", "telco_clean.csv"))
+output <- file.path(root, "results", "random_forest")
+dir.create(output, recursive = TRUE, showWarnings = FALSE)
 seed <- 42L
 
 # 1. 读取清洗后的数据，按交接说明做独热编码
@@ -48,6 +53,11 @@ for (rows in split(train_rows, y[train_rows])) {
 }
 
 cat("训练集：", length(train_rows), " 测试集：", length(test_rows), "\n")
+write.csv(data.frame(
+  row_id = seq_along(y) - 1L,
+  subset = ifelse(fold_id == 0L, "test", "train"),
+  cv_fold = ifelse(fold_id == 0L, -1L, fold_id)
+), file.path(output, "rf_split.csv"), row.names = FALSE)
 
 auc_score <- function(actual, probability) {
   positive <- actual == 1L
@@ -167,6 +177,9 @@ run_forest <- function(features, groups, folder) {
       auc_ci_low = ci[1, "auc"], auc_ci_high = ci[2, "auc"],
       test_f1 = f1_score(y_test, predicted),
       f1_ci_low = ci[1, "f1"], f1_ci_high = ci[2, "f1"],
+      n_features = ncol(features), threshold = 0.5,
+      test_precision = cm["1", "1"] / max(1, sum(cm[, "1"])),
+      test_recall = cm["1", "1"] / sum(cm["1", ]),
       test_accuracy = mean(y_test == predicted),
       baseline_accuracy = mean(y_test == 0L),
       tn = as.integer(cm["0", "0"]), fp = as.integer(cm["0", "1"]),
@@ -217,12 +230,12 @@ run_forest <- function(features, groups, folder) {
 }
 
 # 4. 主分析与稳健性检验
-main_results <- run_forest(x, feature_groups, "rf_results/main")
+main_results <- run_forest(x, feature_groups, file.path(output, "main"))
 
 robustness_results <- run_forest(
   x[setdiff(names(x), "Total Charges")],
   feature_groups[setdiff(names(feature_groups), "Total Charges")],
-  "rf_results/without_total_charges"
+  file.path(output, "without_total_charges")
 )
 
 report_columns <- c(

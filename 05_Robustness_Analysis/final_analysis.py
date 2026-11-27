@@ -146,6 +146,34 @@ def difference_table(pairs, index, observed, samples):
     return pd.DataFrame(rows)
 
 
+def write_robustness_summary(audit, deltas, path):
+    design = audit.iloc[0]
+    counts = audit.groupby("feature_set").n_features.first()
+    lines = [
+        "Telco churn robustness audit",
+        "",
+        "All three models passed checks for shared row IDs, labels, folds and feature definitions.",
+        f"Shared split: {design.train_rows:,} training rows, {design.test_rows:,} test rows "
+        f"({design.test_positives:,} churn cases), {design.cv_folds} training folds.",
+        f"Full: {counts['full']} features. Reduced: {counts['reduced']} features, removing only Total Charges.",
+        f"Cleaned data SHA-256: {design.data_sha256}",
+        f"Shared split SHA-256: {design.split_sha256}",
+        "",
+        f"Differences are reduced minus full. 95% CIs use {REPLICATES:,} paired, label-stratified "
+        f"test bootstrap samples (seed {SEED}).",
+        "Cutoffs and fitted models are held fixed within the bootstrap.",
+    ]
+    for (model, policy), group in deltas.groupby(["model", "threshold_policy"], sort=False):
+        lines.extend(["", f"{model} | {POLICIES[policy]}"])
+        for row in group.itertuples(index=False):
+            lines.append(
+                f"  {METRICS[row.metric]}: {row.difference:+.5f} "
+                f"(95% CI [{row.ci_low:+.5f}, {row.ci_high:+.5f}])"
+            )
+    lines.extend(["", "See feature_set_performance.csv and paired_feature_differences.csv for full precision."])
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def save_plot(figure, path):
     for extension in (".png", ".pdf"):
         figure.savefig(path.with_suffix(extension), dpi=180, bbox_inches="tight")
@@ -269,6 +297,7 @@ def main():
     )
     deltas = difference_table(robustness_pairs, index, observed, samples)
     deltas.to_csv(robustness / "paired_feature_differences.csv", index=False)
+    write_robustness_summary(audit, deltas, robustness / "audit_summary.txt")
     plot_comparison(table, test_labels, scores_matrix, index, comparison)
     plot_robustness(deltas, robustness)
     print(f"Verified {len(design):,} row assignments, {test.sum():,} shared test rows and 23/22 features.")

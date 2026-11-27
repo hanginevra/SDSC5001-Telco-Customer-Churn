@@ -1,0 +1,54 @@
+Telco churn robustness audit
+
+All three models passed checks for shared row IDs, labels, folds and feature definitions.
+Shared split: 5,634 training rows, 1,409 test rows (374 churn cases), 10 training folds.
+Full: 23 features. Reduced: 22 features, removing only Total Charges.
+Cleaned data SHA-256: 41f04c9714e705f9c432d078bb429345a11d227b30f26ca0cf8267a2e91cadcf
+Shared split SHA-256: f228478dda97256e31ac9b4f2961f95c92573b400d6ba9ebae0ecd2027482c1c
+
+Differences are reduced minus full. 95% CIs use 2,000 paired, label-stratified test bootstrap samples (seed 42).
+Cutoffs and fitted models are held fixed within the bootstrap.
+
+Logistic Regression | Fixed cutoff (0.5)
+  ROC-AUC: -0.00259 (95% CI [-0.00436, -0.00088])
+  F1-score: +0.00196 (95% CI [-0.01052, +0.01409])
+  Precision: +0.01125 (95% CI [-0.00222, +0.02539])
+  Recall: -0.00535 (95% CI [-0.02139, +0.00802])
+  Accuracy: +0.00355 (95% CI [-0.00284, +0.00994])
+
+Logistic Regression | Training OOF cutoff
+  ROC-AUC: -0.00259 (95% CI [-0.00436, -0.00088])
+  F1-score: +0.00395 (95% CI [-0.00770, +0.01516])
+  Precision: +0.01872 (95% CI [+0.00690, +0.03163])
+  Recall: -0.02139 (95% CI [-0.03743, -0.00802])
+  Accuracy: +0.01065 (95% CI [+0.00284, +0.01916])
+
+Random Forest | Fixed cutoff (0.5)
+  ROC-AUC: -0.00001 (95% CI [-0.00235, +0.00223])
+  F1-score: -0.00121 (95% CI [-0.01339, +0.01080])
+  Precision: +0.00121 (95% CI [-0.01301, +0.01650])
+  Recall: -0.00267 (95% CI [-0.01604, +0.01070])
+  Accuracy: +0.00000 (95% CI [-0.00568, +0.00568])
+
+Random Forest | Training OOF cutoff
+  ROC-AUC: -0.00001 (95% CI [-0.00235, +0.00223])
+  F1-score: -0.00366 (95% CI [-0.02045, +0.01139])
+  Precision: +0.02327 (95% CI [+0.00818, +0.03905])
+  Recall: -0.05080 (95% CI [-0.07487, -0.02941])
+  Accuracy: +0.01207 (95% CI [+0.00213, +0.02271])
+
+XGBoost | Fixed cutoff (0.5)
+  ROC-AUC: -0.00022 (95% CI [-0.00226, +0.00185])
+  F1-score: +0.00055 (95% CI [-0.01359, +0.01499])
+  Precision: +0.00529 (95% CI [-0.01185, +0.02243])
+  Recall: -0.00267 (95% CI [-0.01872, +0.01337])
+  Accuracy: +0.00142 (95% CI [-0.00568, +0.00852])
+
+XGBoost | Training OOF cutoff
+  ROC-AUC: -0.00022 (95% CI [-0.00226, +0.00185])
+  F1-score: -0.00128 (95% CI [-0.01433, +0.01061])
+  Precision: +0.01517 (95% CI [+0.00186, +0.02866])
+  Recall: -0.02674 (95% CI [-0.04545, -0.01337])
+  Accuracy: +0.00710 (95% CI [-0.00071, +0.01561])
+
+See feature_set_performance.csv and paired_feature_differences.csv for full precision.

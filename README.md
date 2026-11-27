@@ -100,4 +100,4 @@ Git tracks selected review snapshots, including each model's `study_scores.csv` 
 - `results/model_metrics.csv` reports ROC-AUC, F1, precision, recall, accuracy and confusion matrix counts (`tn`, `fp`, `fn`, `tp`) for each variant, along with split, feature count and threshold.
 - `results/model_predictions.csv` reports test row ID, true class, positive-class score and predicted class for each variant. The collector validates IDs and labels against each model's corresponding split before writing either combined table.
 - `results/model_comparison/` contains full-feature metrics, paired model differences, the design audit, ROC coordinates and PNG/PDF figures for ROC, confusion matrices and performance.
-- `results/robustness_analysis/` contains both feature settings' metrics, shared-holdout predictions, paired reduced-minus-full differences and the PNG/PDF robustness figure.
+- `results/robustness_analysis/` contains both feature settings' metrics, shared-holdout predictions, paired reduced-minus-full differences and the PNG/PDF robustness figure. The final analysis regenerates `audit_summary.txt` from the validated three-model results.

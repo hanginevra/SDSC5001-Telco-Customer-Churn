@@ -1,13 +1,26 @@
 from pathlib import Path
 import hashlib
+import os
 import numpy as np
 import pandas as pd
 
-ROOT=Path(__file__).resolve().parent
-DATA=ROOT/'data'/'telco_clean.csv'
-MAIN=ROOT/'results'/'main'
-RED=ROOT/'results'/'without_total_charges'
-OUT=ROOT/'outputs'; OUT.mkdir(exist_ok=True)
+ROOT = Path(__file__).resolve().parents[1]
+DATA = Path(os.environ.get("TELCO_CLEAN_DATA", ROOT / "data" / "telco_clean.csv"))
+RF_DIR = ROOT / "results" / "random_forest"
+MAIN = RF_DIR / "main"
+RED = RF_DIR / "without_total_charges"
+OUT = RF_DIR / "legacy_robustness"
+
+required = (
+    folder / name for folder in (MAIN, RED)
+    for name in ("rf_test_predictions.csv", "rf_test_metrics.csv")
+)
+missing = [str(path.relative_to(ROOT)) for path in required if not path.is_file()]
+if missing:
+    raise SystemExit(
+        "Missing Random Forest files:\n  " + "\n  ".join(missing)
+        + "\nFrom the repository root, run Rscript --vanilla 03_Random_Forest/rf_5001.R first."
+    )
 
 def auc(y,score):
     rank=pd.Series(score).rank(method='average').to_numpy()
@@ -40,6 +53,7 @@ for i in range(2000):
     boot[i,0]=auc(y[ix],p_drop[ix])-auc(y[ix],p_full[ix])
     boot[i,1]=f1(y[ix],c_drop[ix])-f1(y[ix],c_full[ix])
 ci=np.quantile(boot,[.025,.975],axis=0)
+OUT.mkdir(parents=True, exist_ok=True)
 pd.DataFrame([
  {'comparison':'Without Total Charges minus full model','metric':'AUC','difference':delta_auc,'ci_low':ci[0,0],'ci_high':ci[1,0]},
  {'comparison':'Without Total Charges minus full model','metric':'F1','difference':delta_f1,'ci_low':ci[0,1],'ci_high':ci[1,1]},

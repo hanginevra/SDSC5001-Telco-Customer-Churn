@@ -84,7 +84,16 @@ python 05_Robustness_Analysis/final_analysis.py
 
 The script validates each model's IDs, labels, fold assignments and encoded feature names against the shared design before comparing test predictions. It uses default unweighted LR, the RF weighting selected by full-feature training CV, and the tuned XGBoost model. The reduced models retrain and retune using the same training folds and each model's original search method. RF keeps the full model's selected weighting (balanced in this run) in both settings. LR retains its original E5 output alongside the retuned reduced experiment.
 
-The comparison uses a fixed `score >= 0.5` rule and a separate F1-optimized cutoff for each model and feature setting. The optimized cutoffs use only training out-of-fold probabilities. LR and RF search observed scores and prefer the higher cutoff on ties. XGBoost retains its grid from 0.05 to 0.95 and takes the first maximum. The original RF-only `robustness_analysis.py` is retained as a historical contribution and is outside the runner.
+The comparison uses a fixed `score >= 0.5` rule and a separate F1-optimized cutoff for each model and feature setting. The optimized cutoffs use only training out-of-fold probabilities. LR and RF search observed scores and prefer the higher cutoff on ties. XGBoost retains its grid from 0.05 to 0.95 and takes the first maximum.
+
+The original RF-only check is also available as a standalone analysis. If its input CSVs are missing, generate them with the R script first. From the repository root:
+
+```bash
+Rscript --vanilla 03_Random_Forest/rf_5001.R
+python 05_Robustness_Analysis/robustness_analysis.py
+```
+
+This check reads the native CSVs under `results/random_forest/main/` and `results/random_forest/without_total_charges/`. Its reports go to `results/random_forest/legacy_robustness/`.
 
 Each 95% interval uses 2,000 paired, label-stratified test bootstrap samples with seed 42. Within each replicate, every setting uses the same sampled customers. The intervals describe test-set variation with the fitted models and thresholds held fixed. They are exploratory, with no multiple-comparison adjustment.
 

@@ -22,7 +22,7 @@ data/
 collect_results.py         Validate test IDs and collect metrics and predictions
 requirements.txt           Python direct dependencies
 run_all.sh                 Run every stage in order
-results/                   Generated outputs, excluded from Git
+results/                   Generated outputs and selected review snapshots
 ```
 
 ## Setup and run
@@ -71,6 +71,8 @@ You can also open the XGBoost notebook from the repository root or `04_XGBoost/`
 `row_id` is a zero-based position in the committed cleaned CSV. Keep the workbook row order to preserve the split mapping. The R script exports its realized split in the same format. The two holdouts overlap for 292 of 1,409 rows on the tested environment. Because the holdouts and feature sets differ, scores across all three model families are descriptive comparisons. The project computes no paired statistical tests across model families. The LR paired intervals compare its own variants evaluated on the same test rows.
 
 ## Outputs
+
+Git tracks the two combined CSVs, the executed XGBoost notebook and the PNG/PDF figures as review snapshots. New runtime outputs under `results/` are ignored by default.
 
 - `results/data/` and `results/eda/` contain the cleaned data, descriptive summaries and EDA figures.
 - `results/logistic_regression/` and `results/random_forest/` contain the original model-specific metrics, predictions, plots and supporting tables. `rf_split.csv` records the R sample allocation and training folds.
